@@ -1,6 +1,7 @@
 library(ggplot2)
 library(dplyr)
 library(tidyr)
+options(shiny.maxRequestSize=30*1024^2)
 
 # read data in
 read_data <- function(file) {
@@ -20,9 +21,10 @@ make_time <- function(df, freq) {
 cell_list <- NULL
 
 # plot the raw data
-rawplot <- function(df, baseline = c(0, 0), data_window = c(0, 0)) {
+rawplot <- function(df, baseline = c(0, 0), data_window = c(0, 0),
+                    show_legend = TRUE) {
   p <- ggplot(df, aes(x = Time, y = Ca, color = Cell)) +
-    geom_line() +
+    geom_line(show.legend = show_legend) +
     theme_classic() +
     xlab("Time (s)") +
     ylab("Fluorescence") +
@@ -32,32 +34,32 @@ rawplot <- function(df, baseline = c(0, 0), data_window = c(0, 0)) {
           plot.title = element_text(hjust = 0.5)) +
     ggtitle("Raw data")
   # add baseline
-  p <- p + 
-    annotate("text", x = mean(baseline), y = max(df$Ca), 
-             label = "Baseline", vjust = 1) +
+  p <- p +
+    annotate("text", x = mean(baseline), y = max(df$Ca),
+             label = "Baseline\nwindow", vjust = 0) +
     annotate("rect", xmin = baseline[1], xmax = baseline[2],
              ymin = min(df$Ca), ymax = max(df$Ca),
              fill = alpha('gray', 0.3)) +
-    annotate("text", x = mean(data_window), y = max(df$Ca), 
-             label = "Data", vjust = 1) +
+    annotate("text", x = mean(data_window), y = max(df$Ca),
+             label = "Data\nwindow", vjust = 0) +
     annotate("rect", xmin = data_window[1], xmax = data_window[2],
              ymin = min(df$Ca), ymax = max(df$Ca),
              fill = alpha('gray', 0.3))
   return(p)
 }
 
-summarize_data <- function(df, baseline = c(0, 0), data_window = c(0, 0), 
+summarize_data <- function(df, baseline = c(0, 0), data_window = c(0, 0),
                            grouped = FALSE, cells = NULL) {
   # calculate dF/F
   F0 <- filter(df, Time >= baseline[1] & Time <= baseline[2]) %>%
     group_by(Cell) %>%
     summarize("F0" = mean(Ca))
-  df <- left_join(df, F0, by = "Cell") %>% mutate(dF_F = (Ca - F0)/F0)
-  # only keep data window and re-normalize to 0
+  df <- left_join(df, F0, by = "Cell") %>%
+    mutate(dF_F = (Ca - F0)/F0)
   df <- filter(df, Time >= data_window[1] & Time <= data_window[2])
-  df <- mutate(df, Time = Time - min(Time))
-  # only keep selected cells
-  if (!is.null(cells)) df <- filter(df, Cell %in% cells)
+  if (!is.null(cells)) {
+    df <- filter(df, Cell %in% cells)
+  }
   # remove unnecessary columns
   df <- select(df, -Ca, -F0)
   # get max value
@@ -73,8 +75,8 @@ summarize_data <- function(df, baseline = c(0, 0), data_window = c(0, 0),
 }
 
 # plot line
-lineplot <- function(df, baseline = c(0, 0), data_window = c(0, 0), 
-                     grouped = FALSE, cells = NULL) {
+lineplot <- function(df, baseline = c(0, 0), data_window = c(0, 0),
+                     grouped = FALSE, cells = NULL, show_legend = TRUE) {
   df <- summarize_data(df, baseline, data_window, grouped, cells)[["timecourse"]]
   # plot
   p <- ggplot(df, aes(x = Time, y = dF_F)) +
@@ -82,22 +84,20 @@ lineplot <- function(df, baseline = c(0, 0), data_window = c(0, 0),
     xlab("Time (s)") + ylab("dF/F0") +
     scale_x_continuous(expand = c(0, 0)) +
     scale_y_continuous(expand = c(0, 0)) +
-    ggtitle("Processed data") +
-    theme(axis.text = element_text(color = "black"),
-          plot.title = element_text(hjust = 0.5))
+    theme(axis.text = element_text(color = "black"))
   if ("sem" %in% colnames(df)) {
-    p <- p + 
-      geom_line(color = "black") +
+    p <- p +
+      geom_line(color = "black", show.legend = show_legend) +
       geom_ribbon(aes(ymin = dF_F - sem, ymax = dF_F + sem), alpha = 0.4,
                   fill = "black")
   } else {
-    p <- p + geom_line(aes(color = Cell))
+    p <- p + geom_line(aes(color = Cell), show.legend = show_legend)
   }
   return(p)
 }
 
 # plot heatmap
-heatmap <- function(df, baseline = c(0, 0), data_window = c(0, 0), 
+heatmap <- function(df, baseline = c(0, 0), data_window = c(0, 0),
                      grouped = FALSE, cells = NULL) {
   df <- summarize_data(df, baseline, data_window, grouped, cells)[["timecourse"]]
   # plot
